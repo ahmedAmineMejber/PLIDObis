@@ -16,13 +16,13 @@ import base64
 
 import requests
 
+import grpc
+from chirpstack_api import api
 
 app = Flask(__name__)
 app.debug = True
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-
 
 def forward_data(payload):
     global verbose, forward_port, forward_address
@@ -159,6 +159,7 @@ def get_from_chirpstack():
         ip_LNS = request.environ['REMOTE_ADDR']
     else:
         ip_LNS =  request.environ['HTTP_X_FORWARDED_FOR']
+    print("LNS is:", ip_LNS)
     pprint.pprint (fromGW)
 
     downlink = None
@@ -168,29 +169,29 @@ def get_from_chirpstack():
 
         print (fromGW["fPort"])
     if downlink is not None:
-        answer = {
-            "deviceQueueItem": {
-		            "data": base64.b64encode(downlink).decode('utf-8'),
-                    "fPort": fromGW["fPort"],
-            }
-        }
-        pprint.pprint (answer)
-        device = binascii.hexlify(base64.b64decode(fromGW["devEUI"])).decode()
-        downlink_url = "http://" + ip_LNS +':8080/api/devices/'+device+'/queue'
-        #print (downlink_url)
-        headers = {
-            "content-type": "application/json",
-            "grpc-metadata-authorization" : "Bearer "+ secret.key
-        }
-        #print (headers)
-        x = requests.post(downlink_url, data = json.dumps(answer), headers=headers)
+        channel = grpc.insecure_channel(ip_LNS+":8080")
+        client = api.DeviceServiceStub(channel)
+        metadata = [('authorization', 'Bearer '+secret.key)]
+        try:
+            device = fromGW["deviceInfo"]["devEui"]
+            fPort = fromGW['fPort']
+        
+            message = api.EnqueueDeviceQueueItemRequest(
+                queue_item=api.DeviceQueueItem(
+                    dev_eui=device,  # Garder comme string
+                    f_port=fPort,
+                    data=downlink,    # En bytes
+                    confirmed=False
+                )
+            )
+            resp = client.Enqueue(message, metadata=metadata)
+            print(f"Downlink envoyé! ID: {resp.id}")
 
-        #print(x)
-
-
+        except grpc.RpcError as e:
+            print(f"Erreur GRPC {e.details()}")
+            
     resp = Response(status=200)
     return resp
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-v", "--verbose",
