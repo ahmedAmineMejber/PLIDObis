@@ -213,10 +213,14 @@ class TPH(resource.Resource):
 #logging.getLogger("coap-server").setLevel(logging.DEBUG)
 
 def main():
-    global collection 
+    global collection
     global sensor_id
 
-    client = MongoClient()
+    client = MongoClient(host='user.plido.net',
+                         port=27017,
+                         username="PLIDO",
+                         password="IMT_2025_imp",
+                        )
     db = client ["meteo-data"]
     collection = db["measure"] # a new collection for structured data
 
